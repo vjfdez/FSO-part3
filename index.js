@@ -27,6 +27,7 @@ let persons = [
 ];
 
 //Middlewares
+app.use(express.static('dist'));
 app.use(cors());
 app.use(express.json());
 morgan.token('body', req => {
@@ -94,7 +95,7 @@ app.post('/api/persons', (req, res)=> {
     res.json(person);
 });
 
-//Port config
+//Port config               
 const PORT = process.env.PORT || 4001;
 app.listen(PORT, ()=> {
     console.log(`Server running on port ${PORT}`);
