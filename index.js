@@ -1,30 +1,32 @@
 const express = require('express');
 const app = express();
+require('dotenv').config();
 const morgan = require('morgan');
 const cors = require('cors');
+const mongoose = require('mongoose');
 
-let persons = [
-    { 
-      "id": 1,
-      "name": "Arto Hellas", 
-      "number": "040-123456"
-    },
-    { 
-      "id": 2,
-      "name": "Ada Lovelace", 
-      "number": "39-44-5323523"
-    },
-    { 
-      "id": 3,
-      "name": "Dan Abramov", 
-      "number": "12-43-234345"
-    },
-    { 
-      "id": 4,
-      "name": "Mary Poppendieck", 
-      "number": "39-23-6423122"
-    }
-];
+// let persons = [
+//     { 
+//       "id": 1,
+//       "name": "Arto Hellas", 
+//       "number": "040-123456"
+//     },
+//     { 
+//       "id": 2,
+//       "name": "Ada Lovelace", 
+//       "number": "39-44-5323523"
+//     },
+//     { 
+//       "id": 3,
+//       "name": "Dan Abramov", 
+//       "number": "12-43-234345"
+//     },
+//     { 
+//       "id": 4,
+//       "name": "Mary Poppendieck", 
+//       "number": "39-23-6423122"
+//     }
+// ];
 
 //Middlewares
 app.use(express.static('dist'));
@@ -33,44 +35,55 @@ app.use(express.json());
 morgan.token('body', req => {
     return JSON.stringify(req.body)
 });
-app.use(morgan(':method :url :status :body'));
+app.use(morgan(':method :url :status :body'));      
+
+//MongoDB import model
+const Person = require('./models/person');
 
 //Routes
 app.get('/api/persons', (req, res) => {
-    res.json(persons);
+    Person.find({}).then(result => {
+        console.log(result);
+        res.json(result);
+    }) 
 });
 
 app.get('/info', (req, res)=> {
-    let totalPersons = persons.length;
+    Person.find({}).then(result => {
+        console.log(result.length);
 
-    res.send(`
-    <p>Phonebook has info for ${totalPersons} people.</p>
-    <p>${Date()}</p>
-    `);
+        res.send(`
+            <p>Phonebook has info for ${result.length} people.</p>
+            <p>${Date()}</p>
+        `);
+    }) 
 });
 
 app.get('/api/persons/:id', (req, res)=> {
-    const id = Number(req.params.id);
-    const person = persons.find(person=> person.id === id)
-    if(person){
-        res.json(person);
-    } else {
-        res.status(204);
-        res.send('<h1>Cannot find this register.</h1>');
-    };
+    Person.findById(req.params.id)
+    .then(person => {
+      if (person) {
+        res.json(person)
+      } else {
+        res.status(404).end()
+      }
+    })
+    .catch(error => {
+      console.log(error)
+      res.status(500).end()
+    })
 });
 
-app.delete('/api/persons/:id', (req, res)=> {
-    const id = Number(req.params.id);
-    persons = persons.filter(person => person.id !== id);
-    res.status(204);
+app.delete('/api/persons/:id', (req, res, next)=> {
+    Person.findByIdAndDelete(req.params.id)
+        .then(result => {
+            console.log(result);
+            res.status(204).end();
+        })
+        .catch(error => next(error))
 });
 
-const generateId = ()=> {
-    return Math.ceil(Math.random() * (100 - 5 + 5) + 5);
-};
-
-app.post('/api/persons', (req, res)=> {
+app.post('/api/persons', (req, res, next)=> {
     const body = req.body;
 
     if(!body.name || !body.number){
@@ -79,21 +92,45 @@ app.post('/api/persons', (req, res)=> {
         });
     };
 
-    if(persons.find(person => person.name === body.name)){
-        return res.status(400).json({
-            error: 'This name already exist.'
-        });
-    };
-
-    const person = {
+    const person = new Person({
         name: body.name,
-        number: body.number,
-        id: generateId()
-    };
+        number: body.number
+    });
 
-    persons = persons.concat(person);
-    res.json(person);
+    person.save().then(result => {
+        console.log(`Added ${result.name} number ${result.number} to phonebook.`);
+        res.status(200);
+    })
+    .catch(error => next(error));
 });
+
+app.put('/api/persons/:id', (req, res, next) => {
+    const { name, number } = req.body;
+
+    Person.findByIdAndUpdate(
+        req.params.id, 
+        { name, number },
+        { new: true, runValidators: true, context: 'query'}
+    )
+        .then(updatedNote => {
+            res.json(updatedNote);
+        })
+        .catch(error => next(error));
+});
+
+//Controlador de errores.
+const errorHandler = (error, req, res, next) => {
+    console.error(error.message)
+  
+    if (error.name === 'CastError') {
+        return res.status(400).send({ error: 'malformatted id' });
+    } else if(error.name === 'ValidationError') {
+        return res.status(400).json({ error: error.message });
+    }
+    next(error);
+};
+
+app.use(errorHandler);
 
 //Port config               
 const PORT = process.env.PORT || 4001;
